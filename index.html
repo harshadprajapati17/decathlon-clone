@@ -91,10 +91,14 @@
         });
     }
 
+    let ready = false;
+
     function updateProgress() {
-        const pct = Math.round((loaded / FRAME_COUNT) * 100);
-        loaderBar.style.width = pct + "%";
-        loaderText.textContent = "Loading " + pct + "%";
+        if (!ready) {
+            const pct = Math.round((loaded / INITIAL_LOAD) * 100);
+            loaderBar.style.width = Math.min(pct, 100) + "%";
+            loaderText.textContent = "Loading " + Math.min(pct, 100) + "%";
+        }
     }
 
     function loadImage(index) {
@@ -115,19 +119,32 @@
         });
     }
 
-    async function preloadAll() {
-        for (let i = 0; i < FRAME_COUNT; i += BATCH_SIZE) {
-            const batch = [];
-            for (let j = i; j < Math.min(i + BATCH_SIZE, FRAME_COUNT); j++) {
-                batch.push(loadImage(j));
-            }
-            await Promise.all(batch);
+    const INITIAL_LOAD = 50;
 
-            if (i === 0) {
-                resizeCanvas();
-                drawFrame(0, true);
-            }
+    async function loadBatch(start, end) {
+        const batch = [];
+        for (let j = start; j < Math.min(end, FRAME_COUNT); j++) {
+            batch.push(loadImage(j));
         }
+        await Promise.all(batch);
+    }
+
+    async function preloadInitial() {
+        await loadBatch(0, INITIAL_LOAD);
+        ready = true;
+        resizeCanvas();
+        drawFrame(0, true);
+    }
+
+    function loadRemaining() {
+        let i = INITIAL_LOAD;
+        function nextBatch() {
+            if (i >= FRAME_COUNT) return;
+            const end = Math.min(i + BATCH_SIZE, FRAME_COUNT);
+            loadBatch(i, end).then(nextBatch);
+            i = end;
+        }
+        nextBatch();
     }
 
     function initScrollTrigger() {
@@ -160,7 +177,10 @@
     window.addEventListener("resize", resizeCanvas);
 
     resizeCanvas();
-    preloadAll().then(initScrollTrigger);
+    preloadInitial().then(function () {
+        initScrollTrigger();
+        loadRemaining();
+    });
 })();
 </script>
 

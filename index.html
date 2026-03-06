@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scroll-Driven Image Sequence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <style>
+        html, body { margin: 0; padding: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body class="bg-black">
+
+    <!-- Spacer before the sequence so scroll context is clear -->
+    <section class="h-screen flex items-center justify-center bg-zinc-950">
+        <h1 class="text-white text-4xl md:text-6xl font-bold tracking-tight opacity-80">Scroll Down</h1>
+    </section>
+
+    <!-- Image-sequence section -->
+    <section id="sequence-section" class="relative w-full h-screen">
+        <!-- Loading overlay -->
+        <div id="loader" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black">
+            <div class="w-64 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                <div id="loader-bar" class="h-full bg-white rounded-full transition-[width] duration-150 ease-out" style="width: 0%"></div>
+            </div>
+            <p id="loader-text" class="mt-4 text-zinc-500 text-sm font-mono tracking-wider">Loading 0%</p>
+        </div>
+        <canvas id="sequence-canvas" class="w-full h-full object-cover"></canvas>
+    </section>
+
+    <!-- Spacer after the sequence -->
+    <section class="h-screen flex items-center justify-center bg-zinc-950">
+        <h1 class="text-white text-4xl md:text-6xl font-bold tracking-tight opacity-80">Continue</h1>
+    </section>
+
+<script>
+(function () {
+    const FRAME_COUNT = 650;
+    const BATCH_SIZE  = 20;
+
+    const canvas  = document.getElementById("sequence-canvas");
+    const ctx     = canvas.getContext("2d");
+    const loader  = document.getElementById("loader");
+    const loaderBar  = document.getElementById("loader-bar");
+    const loaderText = document.getElementById("loader-text");
+
+    const frames  = new Array(FRAME_COUNT);
+    let loaded    = 0;
+    let currentFrame = -1;
+    let drawScheduled = false;
+
+    function framePath(index) {
+        return `./images/seq/${String(index + 1).padStart(3, "0")}.jpg`;
+    }
+
+    function resizeCanvas() {
+        canvas.width  = window.innerWidth;
+        canvas.height = window.innerHeight;
+        drawFrame(currentFrame < 0 ? 0 : currentFrame, true);
+    }
+
+    function drawFrame(index, force) {
+        if (!force && index === currentFrame) return;
+        currentFrame = index;
+
+        if (drawScheduled && !force) return;
+        drawScheduled = true;
+
+        requestAnimationFrame(function () {
+            drawScheduled = false;
+            const img = frames[currentFrame];
+            if (!img) return;
+
+            const cw = canvas.width;
+            const ch = canvas.height;
+            const iw = img.naturalWidth;
+            const ih = img.naturalHeight;
+
+            // cover-fit: fill canvas without distortion
+            const scale = Math.max(cw / iw, ch / ih);
+            const dw = iw * scale;
+            const dh = ih * scale;
+            const dx = (cw - dw) / 2;
+            const dy = (ch - dh) / 2;
+
+            ctx.clearRect(0, 0, cw, ch);
+            ctx.drawImage(img, dx, dy, dw, dh);
+        });
+    }
+
+    function updateProgress() {
+        const pct = Math.round((loaded / FRAME_COUNT) * 100);
+        loaderBar.style.width = pct + "%";
+        loaderText.textContent = "Loading " + pct + "%";
+    }
+
+    function loadImage(index) {
+        return new Promise(function (resolve) {
+            const img = new Image();
+            img.onload = function () {
+                frames[index] = img;
+                loaded++;
+                updateProgress();
+                resolve();
+            };
+            img.onerror = function () {
+                loaded++;
+                updateProgress();
+                resolve();
+            };
+            img.src = framePath(index);
+        });
+    }
+
+    async function preloadAll() {
+        for (let i = 0; i < FRAME_COUNT; i += BATCH_SIZE) {
+            const batch = [];
+            for (let j = i; j < Math.min(i + BATCH_SIZE, FRAME_COUNT); j++) {
+                batch.push(loadImage(j));
+            }
+            await Promise.all(batch);
+
+            if (i === 0) {
+                resizeCanvas();
+                drawFrame(0, true);
+            }
+        }
+    }
+
+    function initScrollTrigger() {
+        loader.style.opacity = "0";
+        loader.style.pointerEvents = "none";
+        setTimeout(function () { loader.remove(); }, 400);
+
+        gsap.registerPlugin(ScrollTrigger);
+
+        const obj = { frame: 0 };
+
+        gsap.to(obj, {
+            frame: FRAME_COUNT - 1,
+            snap: "frame",
+            ease: "none",
+            scrollTrigger: {
+                trigger: "#sequence-section",
+                start: "top top",
+                end: "+=" + (FRAME_COUNT * 6) + "px",
+                pin: true,
+                scrub: 0.15,
+                anticipatePin: 1
+            },
+            onUpdate: function () {
+                drawFrame(Math.round(obj.frame));
+            }
+        });
+    }
+
+    window.addEventListener("resize", resizeCanvas);
+
+    resizeCanvas();
+    preloadAll().then(initScrollTrigger);
+})();
+</script>
+
+</body>
+</html>
